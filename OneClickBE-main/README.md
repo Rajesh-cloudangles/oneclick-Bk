@@ -1,2 +1,0 @@
-# OneClickBE
-OneClick Application Backend .
