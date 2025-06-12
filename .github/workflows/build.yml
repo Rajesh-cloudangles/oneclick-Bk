@@ -20,6 +20,6 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=Rajesh-cloudangles_oneclick-Bk
-            -Dsonar.organization=rajesh-cloudangles
+            -Dsonar.organization=rajesh-cloudangles-1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
