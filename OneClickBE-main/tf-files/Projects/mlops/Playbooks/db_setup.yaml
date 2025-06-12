@@ -1,0 +1,92 @@
+- name: DB Setup and Configuration
+  hosts: localhost
+  become: yes
+  tasks:
+    # Install and Configure MySQL
+    - name: "Install MySQL Server #TAG102# "
+      apt:
+        name: mysql-server
+        state: present
+        update_cache: yes
+
+    - name: "Start and enable MySQL service #OPS505#"
+      systemd:
+        name: mysql 
+        state: started
+        enabled: yes
+
+    - name: Secure MySQL Installation - Update Root Password
+      shell: |
+        mysql -u root -p'Mlangles@123' -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'Mlangles@123'; FLUSH PRIVILEGES;"
+      args:
+        executable: /bin/bash
+    - name: Allow remote connections to MySQL
+      lineinfile:
+        path: /etc/mysql/mysql.conf.d/mysqld.cnf
+        regexp: "^bind-address"
+        line: "bind-address = 0.0.0.0"
+      notify: Restart MySQL
+
+    - name: Create mlops database
+      mysql_db:
+        name: mlops
+        state: present
+        login_user: root
+        login_password: "Mlangles@123"
+
+    - name: Create mlops user and grant permissions
+      mysql_user:
+        name: mlops
+        password: "mlangles123"
+        host: "%"
+        priv: "mlops.*:ALL"
+        state: present
+        login_user: root
+        login_password: "Mlangles@123"
+        check_implicit_admin: yes
+
+    # ✅ Install and Configure MongoDB
+    - name: Add MongoDB GPG key
+      apt_key:
+        url: https://www.mongodb.org/static/pgp/server-6.0.asc
+        state: present
+
+    - name: Add MongoDB repository
+      apt_repository:
+        repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse"
+        state: present
+        filename: mongodb-org-6.0
+
+    - name: Update apt cache and install MongoDB
+      apt:
+        name: mongodb-org
+        state: present
+        update_cache: yes
+
+    - name: "Start and enable MongoDB #OPS507#"
+      systemd:
+        name: mongod
+        state: started
+        enabled: yes
+
+    - name: "Allow remote MongoDB connections"
+      lineinfile:
+        path: /etc/mongod.conf
+        regexp: "^\\s*bindIp:"
+        line: "  bindIp: 0.0.0.0"
+      notify: Restart MongoDB
+
+# Handlers for restarting services
+  handlers:
+    - name: Restart MySQL
+      systemd:
+        name: mysql
+        state: restarted
+
+    - name: Restart MongoDB
+      systemd:
+        name: mongod
+        state: restarted
+
+
+    

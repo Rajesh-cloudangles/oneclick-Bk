@@ -1,0 +1,176 @@
+- name: Provision MLOps Code Generation
+  hosts: webserver
+  become: yes
+  tasks:
+
+    # Cleanup and System Maintenance
+    - name: "Clean and remove unnecessary packages #TAG107#"
+      apt:
+        autoclean: yes
+        autoremove: yes
+    
+    # Ensure Permissions
+    - name: Set permissions for /mnt/user-data
+      file:
+        path: /mnt/user-data
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0775'
+        recurse: yes
+    - name: Load environment variables
+      shell: |
+        source /etc/environment
+        echo "$mlangles_mlops_dev_url_https|$domain"
+      register: env_vars
+      changed_when: false
+    - name: Read release_version from file
+      slurp:
+        src: /home/ubuntu/release_version.txt
+      register: release_version_raw
+    - name: Set fact with decoded release_version
+      set_fact:
+        release_version: "{{ release_version_raw.content | b64decode | trim }}"
+    - name: Extract values
+      set_fact:
+        mlangles_mlops_dev_url_https: "{{ env_vars.stdout.split('|')[0] }}"
+        domain: "{{ env_vars.stdout.split('|')[1] }}"
+    # Check Disk Space
+    - name: Display available disk space
+      command: df -h
+      register: disk_space
+      changed_when: false
+    - debug:
+        var: disk_space.stdout_lines
+
+    # Fetch AWS Secrets
+    - name: Fetch AWS secrets
+      shell: >
+        aws secretsmanager get-secret-value --secret-id webapp-secrets --query SecretString --output text --region us-east-1
+      register: secrets_output
+    - name: Parse AWS secrets
+      set_fact:
+        secrets: "{{ secrets_output.stdout | from_json }}"
+    # Get AWS Metadata Token
+    - name: Get AWS metadata token
+      shell: |
+        curl -s -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" http://169.254.169.254/latest/api/token
+      register: metadata_token
+      changed_when: false
+    # Get Public IP from AWS Metadata
+    - name: Set public IP using metadata token
+      shell: |
+        curl -s -H "X-aws-ec2-metadata-token: {{ metadata_token.stdout }}" http://169.254.169.254/latest/meta-data/public-ipv4
+      register: public_ip_result
+      changed_when: false
+    # Get Private IP from AWS Metadata
+    - name: Set private IP using metadata token
+      shell: |
+        curl -s -H "X-aws-ec2-metadata-token: {{ metadata_token.stdout }}" http://169.254.169.254/latest/meta-data/local-ipv4
+      register: private_ip_result
+      changed_when: false
+    # Set Public and Private IPs as Facts
+    - name: Set public and private IPs
+      set_fact:
+        public_ip: "{{ public_ip_result.stdout }}"
+        private_ip: "{{ private_ip_result.stdout }}"
+
+    # Clone the Repository Securely
+    - name: "Clean old directory before fetching artifacts"
+      file:
+        path: "/mnt/user-data/mlops_Code_Generation"
+        state: absent
+    
+    - name: "Download artifacts from S3"
+      shell: |
+        aws s3 sync s3://github-artifacts-ca/mlops/{{ release_version }}/mlops_Code_Generation/ /mnt/user-data/mlops_Code_Generation/ --region us-east-1
+      args:
+        executable: /bin/bash
+      register: download_result
+      changed_when: download_result.rc != 0
+    - name: Update ip in config/config.yaml with MLANGLES_MLOPS_DEV_URL_HTTPS
+      lineinfile:
+        path: /mnt/user-data/mlops_Code_Generation/config/config.yaml
+        regexp: '^\s*ip:.*'
+        line: '  ip: "{{ lookup("env", "mlangles_mlops_dev_url_https") }}"'
+        backrefs: yes
+    - name: Update pipeline ip in config/config.yaml with MLANGLES_MLOPS_DEV_URL_HTTPS
+      lineinfile:
+        path: /mnt/user-data/mlops_Code_Generation/config/config.yaml
+        regexp: '^\s*pipeline:\s*\n\s*ip:.*'
+        line: '  ip: "{{ lookup("env", "mlangles_mlops_dev_url_https") }}"'
+        backrefs: yes
+    - name: Update vector_db ip in config/config.yaml with MLANGLES_MLOPS_DEV_URL_HTTPS
+      lineinfile:
+        path: /mnt/user-data/mlops_Code_Generation/config/config.yaml
+        regexp: '^\s*vector_db:\s*\n\s*ip:.*'
+        line: '  ip: "{{ lookup("env", "mlangles_mlops_dev_url_https") }}"'
+        backrefs: yes
+    - name: Update deepseek_llm ip and port in config.yaml
+      replace:
+        path: /mnt/user-data/mlops_Code_Generation/config/config.yaml
+        regexp: '^\s*deepseek_llm:\s*\n\s*ip:.*\n\s*port:.*'
+        replace: |
+          deepseek_llm:
+            ip: "http://{{ private_ip }}"
+            port: "7000"
+    
+    - name: Update pipeline ip in config/config.yaml with MLANGLES_MLOPS_DEV_URL_HTTPS
+      lineinfile:
+        path: /mnt/user-data/mlops_Code_Generation/config/config.yaml
+        regexp: '^\s*pipeline:\s*\n\s*ip:.*'
+        line: '  ip: "{{ lookup("env", "mlangles_mlops_dev_url_https") }}"'
+        backrefs: yes
+    - name: Update domain in docker-compose.yaml for certificate paths
+      replace:
+        path: "/mnt/user-data/mlops_Code_Generation/docker-compose.yaml"
+        regexp: "/etc/letsencrypt/live/[^/]+/"
+        replace: "/etc/letsencrypt/live/{{ domain }}/"
+
+    # Python Virtual Environment Setup
+    - name: "Create a Python virtual environment #DEV801#"
+      command: python3 -m venv /mnt/user-data/mlops_Code_Generation/venv
+      args:
+        creates: /mnt/user-data/mlops_Code_Generation/venv
+
+    - name: Install Python dependencies
+      pip:
+        requirements: /mnt/user-data/mlops_Code_Generation/requirements.txt
+        virtualenv: /mnt/user-data/mlops_Code_Generation/venv
+      become: yes
+
+    # Ensure Systemd Service Exists
+    - name: Create systemd service file for codegen
+      copy:
+        dest: /etc/systemd/system/codegen.service
+        content: |
+          [Unit]
+          Description=Code Generation
+          After=network.target
+
+          [Service]
+          ExecStart=/mnt/user-data/mlops_Code_Generation/venv/bin/python3 /mnt/user-data/mlops_Code_Generation/run.py
+          WorkingDirectory=/mnt/user-data/mlops_Code_Generation/
+          Environment="HF_HOME=/mnt/user-data/deepseek"
+          Restart=always
+          User=ubuntu
+          Group=ubuntu
+
+          [Install]
+          WantedBy=multi-user.target
+
+    # Start and Enable the Service
+    - name: "Reload systemd, enable, and restart the service #TAG108#"
+      systemd:
+        name: codegen
+        daemon_reload: yes
+        enabled: yes
+        state: restarted
+
+    # View Service Logs
+    - name: Fetch the last 50 lines of the service logs
+      command: journalctl -u codegen.service --no-pager --lines=50
+      register: service_logs
+      changed_when: false
+    - debug:
+        var: service_logs.stdout_lines

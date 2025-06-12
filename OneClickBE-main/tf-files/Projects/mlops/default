@@ -1,0 +1,22 @@
+server { 
+    server_name dummy.cloudoptimax.com;  
+    location = /favicon.ico { access_log off; log_not_found off; } 
+    location /static/ {   
+
+        root /mnt/user-data/mlops-frontend/build; 
+        index index.html;
+    }   
+    location / { 
+        proxy_read_timeout 1000;
+        proxy_connect_timeout 1000;
+        proxy_send_timeout 1000;
+        root /mnt/user-data/mlops-frontend/build;  # Ensure this path points to your static files 
+
+        try_files $uri /index.html;  # This will serve the index.html for SPA (if applicable) 
+    }
+   location /nodeexporter {
+        include proxy_params;
+        proxy_pass http://127.0.0.1:9100/metrics;
+    }
+}
+ 

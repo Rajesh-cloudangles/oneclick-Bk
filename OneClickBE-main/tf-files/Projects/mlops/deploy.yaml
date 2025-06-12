@@ -1,0 +1,4 @@
+---
+- import_playbook: Playbooks/db_setup.yaml
+- import_playbook: Playbooks/nginx.yaml
+- import_playbook: Playbooks/artifacts_deploy.yaml

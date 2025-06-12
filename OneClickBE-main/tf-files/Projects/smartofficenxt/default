@@ -1,0 +1,25 @@
+server {
+    listen 80;
+    server_name dev.smartangles.site;
+
+    # React Form Builder
+    location /reactformbuilder/ {
+        alias /home/ubuntu/smartofficenxt-artifacts/SmartOfficeNxt_ReactFormBuilder/build/;
+        index index.html;
+        try_files $uri $uri/ /reactformbuilder/index.html;
+    }
+
+    # Workflow Designer
+    location /workflow/ {
+        alias /home/ubuntu/smartofficenxt-artifacts/SmartOfficeNxt_WorkFlowDesigner/build/;
+        index index.html;
+        try_files $uri $uri/ /workflow/index.html;
+    }
+
+    # Registration Form
+    location /RegistrationForm/ {
+        alias /home/ubuntu/smartofficenxt-artifacts/SmartOfficeNxtRegistrationForm/build/;
+        index index.html;
+        try_files $uri $uri/ /RegistrationForm/index.html;
+    }
+}

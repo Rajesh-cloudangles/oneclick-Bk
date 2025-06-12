@@ -1,0 +1,29 @@
+---
+- name: Update Nginx configuration with environment variable
+  hosts: localhost
+  become: yes
+  vars:
+    nginx_config_file: "/etc/nginx/sites-available/default"
+    env_var_name: "domain"
+  tasks:
+    - name: Get environment variable value
+      ansible.builtin.shell: "echo ${{ env_var_name }}"
+      register: env_var_value
+      ignore_errors: no
+
+    - name: Validate environment variable is set
+      ansible.builtin.fail:
+        msg: "Environment variable ${{ env_var_name }} is not set."
+      when: env_var_value.stdout == ""
+
+    - name: Replace domain and subdomains with environment variable value
+      ansible.builtin.replace:
+        path: "{{ nginx_config_file }}"
+        regexp: "([a-zA-Z0-9.-]+)?\\.mlangles\\.ai"
+        replace: "{{ env_var_value.stdout }}"
+        backup: yes
+
+    - name: Restart Nginx to apply changes
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
