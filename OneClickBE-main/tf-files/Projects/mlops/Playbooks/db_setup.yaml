@@ -32,7 +32,7 @@
         name: mlops
         state: present
         login_user: root
-        login_password: "Mlangles@123"
+        login_password: ""
 
     - name: Create mlops user and grant permissions
       mysql_user:
